@@ -13,11 +13,6 @@ export const metadata: Metadata = {
   title: "Vive! Creaciones",
   description:
     "Papelería creativa, estampados DTF y productos personalizados para celebrar tu marca e ideas.",
-  icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
-  },
 };
 
 export const viewport: Viewport = {
