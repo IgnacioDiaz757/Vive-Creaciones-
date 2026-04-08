@@ -45,10 +45,6 @@ export function Gallery() {
         <h2 className="mt-2 text-3xl font-extrabold text-slate-900 dark:text-white md:text-4xl">
           Inspiración de trabajos reales
         </h2>
-        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-          Formato ideal para la card: <span className="font-semibold">1:1 (cuadrado)</span>.
-          También podés subir otros formatos y se ajustan automáticamente con recorte.
-        </p>
       </div>
       {fetchError && <p className="mb-3 text-sm text-rose-600">{fetchError}</p>}
 
