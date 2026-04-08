@@ -14,9 +14,9 @@ export const metadata: Metadata = {
   description:
     "Papelería creativa, estampados DTF y productos personalizados para celebrar tu marca e ideas.",
   icons: {
-    icon: "/Diseño sin título.png",
-    shortcut: "/Diseño sin título.png",
-    apple: "/Diseño sin título.png",
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
   },
 };
 
