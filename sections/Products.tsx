@@ -57,7 +57,6 @@ export function Products() {
             title={product.title}
             description={product.description}
             image={product.image}
-            images={product.images}
             price={product.price}
           />
           );
