@@ -1,24 +1,19 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import { ChevronLeft, ChevronRight, MessageCircleHeart } from "lucide-react";
 
-type ProductCardProps = {
-  slug: string;
+type SubproductCardProps = {
   title: string;
-  description: string;
-  image: string;
-  images?: string[];
-  price?: string | null;
+  price: string | null;
+  description: string | null;
+  images: string[];
 };
 
-export function ProductCard({ slug, title, description, image, images, price }: ProductCardProps) {
-  const router = useRouter();
-  const gallery = images && images.length > 0 ? images : [image];
+export function SubproductCard({ title, price, description, images }: SubproductCardProps) {
   const [index, setIndex] = useState(0);
+  const gallery = images.length > 0 ? images : [];
 
   useEffect(() => {
     if (gallery.length <= 1) return;
@@ -28,31 +23,22 @@ export function ProductCard({ slug, title, description, image, images, price }: 
     return () => clearInterval(interval);
   }, [gallery.length]);
 
-  const prevImage = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
+  const prevImage = () => {
+    if (gallery.length <= 1) return;
     setIndex((current) => (current - 1 + gallery.length) % gallery.length);
   };
 
-  const nextImage = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
+  const nextImage = () => {
+    if (gallery.length <= 1) return;
     setIndex((current) => (current + 1) % gallery.length);
   };
 
   return (
-    <motion.article
-      whileHover={{ y: -4, scale: 1.01 }}
-      transition={{ duration: 0.2 }}
-      className="bubble-card flex h-full cursor-pointer flex-col p-4"
-      onClick={() => router.push(`/productos/${slug}`)}
-    >
-      <div className="relative mb-4 aspect-[4/3] overflow-hidden rounded-2xl">
-        <Image
-          src={gallery[index]}
-          alt={title}
-          fill
-          unoptimized
-          className="object-cover transition duration-300 hover:scale-105"
-        />
+    <article className="bubble-card flex h-full flex-col p-4">
+      <div className="relative mb-3 aspect-[4/3] overflow-hidden rounded-2xl">
+        {gallery[index] && (
+          <Image src={gallery[index]} alt={title} fill unoptimized className="object-cover" />
+        )}
         {gallery.length > 1 && (
           <>
             <button
@@ -85,20 +71,17 @@ export function ProductCard({ slug, title, description, image, images, price }: 
         )}
       </div>
       <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h3>
-      {price && (
-        <p className="mt-1 text-sm font-bold text-sky-700 dark:text-sky-300">Precio: {price}</p>
-      )}
-      <p className="mt-2 flex-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>
+      {price && <p className="mt-1 text-sm font-bold text-sky-700 dark:text-sky-300">Precio: {price}</p>}
+      {description && <p className="mt-2 flex-1 text-sm text-slate-600 dark:text-slate-300">{description}</p>}
       <a
-        href="https://wa.me/5493513780509?text=Hola%20Vive!%20Creaciones,%20quiero%20consultar%20por%20este%20producto."
+        href={`https://wa.me/5493513780509?text=Hola%20Vive!%20Creaciones,%20quiero%20consultar%20por%20${encodeURIComponent(title)}.`}
         target="_blank"
         rel="noreferrer"
-        onClick={(event) => event.stopPropagation()}
         className="mt-4 inline-flex items-center gap-2 self-start rounded-xl bg-brand-green/90 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-brand-green"
       >
+        <MessageCircleHeart className="size-4" />
         Consultar
-        <ArrowUpRight className="size-4" />
       </a>
-    </motion.article>
+    </article>
   );
 }
