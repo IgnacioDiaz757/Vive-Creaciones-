@@ -86,9 +86,21 @@ export async function POST(request: NextRequest) {
     .toBuffer();
 
   const productToken = section === "products" ? `__product-${productSlug}` : "";
+  const heroToken = section === "products" ? "__hero" : "";
   const rawBaseName = file.name.replace(/\.[^.]+$/, "");
   const safeBaseName = sanitizeFileName(rawBaseName) || "image";
-  const filePath = `${Date.now()}__${aspect}${productToken}__${safeBaseName}.jpg`;
+  const filePath = `${Date.now()}__${aspect}${heroToken}${productToken}__${safeBaseName}.jpg`;
+
+  if (section === "products") {
+    const { data: existingFiles } = await supabase.storage.from(bucket).list("", { limit: 500 });
+    const oldHeroFiles =
+      existingFiles
+        ?.map((existing) => existing.name)
+        .filter((name) => name.includes("__hero__") && name.includes(`__product-${productSlug}__`)) ?? [];
+    if (oldHeroFiles.length > 0) {
+      await supabase.storage.from(bucket).remove(oldHeroFiles);
+    }
+  }
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, processedImage, {
     upsert: false,

@@ -37,7 +37,7 @@ export default async function ProductDetailPage({ params }: Props) {
           <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white">
             Opciones de {product.title}
           </h2>
-          <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-5 lg:grid-cols-4">
             {product.subcards.map((card) => (
               <SubproductCard
                 key={card.id}

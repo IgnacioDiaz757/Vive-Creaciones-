@@ -14,6 +14,8 @@ type SubproductCardProps = {
 export function SubproductCard({ title, price, description, images }: SubproductCardProps) {
   const [index, setIndex] = useState(0);
   const gallery = images.length > 0 ? images : [];
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchEndX, setTouchEndX] = useState<number | null>(null);
 
   useEffect(() => {
     if (gallery.length <= 1) return;
@@ -33,9 +35,37 @@ export function SubproductCard({ title, price, description, images }: Subproduct
     setIndex((current) => (current + 1) % gallery.length);
   };
 
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    setTouchStartX(event.touches[0]?.clientX ?? null);
+    setTouchEndX(null);
+  };
+
+  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    setTouchEndX(event.touches[0]?.clientX ?? null);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX === null || touchEndX === null || gallery.length <= 1) return;
+    const delta = touchStartX - touchEndX;
+    const minSwipe = 40;
+
+    if (delta > minSwipe) {
+      nextImage();
+    } else if (delta < -minSwipe) {
+      prevImage();
+    }
+    setTouchStartX(null);
+    setTouchEndX(null);
+  };
+
   return (
     <article className="bubble-card flex h-full flex-col p-4">
-      <div className="relative mb-3 aspect-[4/3] overflow-hidden rounded-2xl">
+      <div
+        className="relative mb-3 aspect-[4/3] overflow-hidden rounded-2xl"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {gallery[index] && (
           <Image src={gallery[index]} alt={title} fill unoptimized className="object-cover" />
         )}

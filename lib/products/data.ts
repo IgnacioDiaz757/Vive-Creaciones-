@@ -56,6 +56,13 @@ function sortImageNamesByNewest(names: string[]) {
   return [...names].sort((a, b) => b.localeCompare(a));
 }
 
+function getSubcardOrderFromName(fileName: string) {
+  const match = fileName.match(/__order-(\d{3})__/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
 export async function getProductsSummary() {
   const supabase = getSupabaseAdminClient();
   if (!supabase) {
@@ -71,15 +78,17 @@ export async function getProductsSummary() {
   const names = sortImageNamesByNewest((files ?? []).map((file) => file.name));
 
   return PRODUCT_CATALOG.map((product) => {
-    const productImageNames = names.filter((name) => name.includes(`__product-${product.slug}__`));
-    const images = productImageNames.map(
-      (name) => supabase.storage.from("product-images").getPublicUrl(name).data.publicUrl
+    const heroName = names.find(
+      (name) => name.includes("__hero__") && name.includes(`__product-${product.slug}__`)
     );
+    const heroImage = heroName
+      ? supabase.storage.from("product-images").getPublicUrl(heroName).data.publicUrl
+      : product.image;
     const detail = detailsMap.get(product.slug);
     return {
       ...product,
-      image: images[0] ?? product.image,
-      images: images.length > 0 ? images : [product.image],
+      image: heroImage,
+      images: [heroImage],
       description: detail?.shortDescription || product.description,
       price: detail?.price ?? null,
     };
@@ -118,7 +127,7 @@ export async function getProductDetail(slug: string): Promise<ProductDetailModel
   const imageNames = sortImageNamesByNewest(
     (files ?? [])
       .map((file) => file.name)
-      .filter((name) => name.includes(`__product-${slug}__`) && !name.includes("__subcard-"))
+      .filter((name) => name.includes("__hero__") && name.includes(`__product-${slug}__`))
   );
 
   const images = imageNames.map(
@@ -137,7 +146,7 @@ export async function getProductDetail(slug: string): Promise<ProductDetailModel
           (files ?? [])
             .map((file) => file.name)
             .filter((name) => name.includes(`__subcard-${card.id}__`))
-        );
+        ).sort((a, b) => getSubcardOrderFromName(a) - getSubcardOrderFromName(b));
         const subcardImages = subcardImageNames.map(
           (name) => supabase.storage.from("product-images").getPublicUrl(name).data.publicUrl
         );

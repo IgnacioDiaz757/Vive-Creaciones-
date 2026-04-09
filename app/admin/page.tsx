@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Lock, LogOut, Trash2, UploadCloud } from "lucide-react";
+import Image from "next/image";
+import { ArrowLeft, ArrowRight, Lock, LogOut, Trash2, UploadCloud, X } from "lucide-react";
 import { ASPECT_OPTIONS, type AspectOption } from "@/lib/images/aspect";
 import { PRODUCT_CATALOG } from "@/lib/products/catalog";
 
@@ -15,6 +16,12 @@ type ProductSubcard = {
   price: string | null;
   description: string | null;
   image_url: string | null;
+};
+type SubcardImage = {
+  subcardId: string;
+  name: string;
+  url: string;
+  order: number;
 };
 
 export default function AdminPage() {
@@ -32,6 +39,7 @@ export default function AdminPage() {
   });
   const [details, setDetails] = useState<Record<string, { shortDescription: string }>>({});
   const [subcards, setSubcards] = useState<Record<string, ProductSubcard[]>>({});
+  const [subcardImages, setSubcardImages] = useState<Record<string, SubcardImage[]>>({});
   const [newSubcard, setNewSubcard] = useState<
     Record<string, { title: string; price: string; description: string; files: File[] }>
   >({});
@@ -62,13 +70,22 @@ export default function AdminPage() {
   const loadSubcards = async () => {
     const response = await fetch("/api/admin/product-subcards");
     if (!response.ok) return;
-    const data = (await response.json()) as { subcards?: ProductSubcard[] };
+    const data = (await response.json()) as { subcards?: ProductSubcard[]; subcardImages?: SubcardImage[] };
     const mapped: Record<string, ProductSubcard[]> = {};
     (data.subcards ?? []).forEach((card) => {
       if (!mapped[card.product_slug]) mapped[card.product_slug] = [];
       mapped[card.product_slug].push(card);
     });
     setSubcards(mapped);
+    const mappedImages: Record<string, SubcardImage[]> = {};
+    (data.subcardImages ?? []).forEach((image) => {
+      if (!mappedImages[image.subcardId]) mappedImages[image.subcardId] = [];
+      mappedImages[image.subcardId].push(image);
+    });
+    Object.keys(mappedImages).forEach((subcardId) => {
+      mappedImages[subcardId] = mappedImages[subcardId].sort((a, b) => a.order - b.order);
+    });
+    setSubcardImages(mappedImages);
   };
 
   useEffect(() => {
@@ -231,6 +248,29 @@ export default function AdminPage() {
     }));
   };
 
+  const moveNewSubcardFile = (slug: string, index: number, direction: "left" | "right") => {
+    setNewSubcard((current) => {
+      const values = current[slug];
+      if (!values) return current;
+      const files = [...values.files];
+      const target = direction === "left" ? index - 1 : index + 1;
+      if (target < 0 || target >= files.length) return current;
+      [files[index], files[target]] = [files[target], files[index]];
+      return { ...current, [slug]: { ...values, files } };
+    });
+  };
+
+  const removeNewSubcardFile = (slug: string, index: number) => {
+    setNewSubcard((current) => {
+      const values = current[slug];
+      if (!values) return current;
+      return {
+        ...current,
+        [slug]: { ...values, files: values.files.filter((_, fileIndex) => fileIndex !== index) },
+      };
+    });
+  };
+
   const handleCreateSubcard = async (slug: string) => {
     setLoading(true);
     setMessage("");
@@ -276,6 +316,55 @@ export default function AdminPage() {
     await loadSubcards();
     setLoading(false);
     setMessage("Card eliminada.");
+  };
+
+  const handleDeleteSubcardImage = async (card: ProductSubcard, imageName: string) => {
+    setLoading(true);
+    setMessage("");
+    const response = await fetch("/api/admin/product-subcards", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: card.id, imageName, productSlug: card.product_slug }),
+    });
+    const data = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      setMessage(data.error ?? "No se pudo eliminar la imagen.");
+      setLoading(false);
+      return;
+    }
+    await loadSubcards();
+    setLoading(false);
+    setMessage("Imagen eliminada del carrusel.");
+  };
+
+  const reorderSubcardImages = async (card: ProductSubcard, fromIndex: number, toIndex: number) => {
+    const currentImages = [...(subcardImages[card.id] ?? [])];
+    if (toIndex < 0 || toIndex >= currentImages.length) return;
+    const [moved] = currentImages.splice(fromIndex, 1);
+    currentImages.splice(toIndex, 0, moved);
+    setSubcardImages((current) => ({ ...current, [card.id]: currentImages }));
+
+    setLoading(true);
+    setMessage("");
+    const response = await fetch("/api/admin/product-subcards", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: card.id,
+        productSlug: card.product_slug,
+        orderedNames: currentImages.map((image) => image.name),
+      }),
+    });
+    const data = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      setMessage(data.error ?? "No se pudo reordenar el carrusel.");
+      setLoading(false);
+      await loadSubcards();
+      return;
+    }
+    await loadSubcards();
+    setLoading(false);
+    setMessage("Orden del carrusel actualizado.");
   };
 
   const beginEditSubcard = (card: ProductSubcard) => {
@@ -353,29 +442,50 @@ export default function AdminPage() {
         <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white sm:text-3xl">Admin</h1>
 
         {!authenticated ? (
-          <form onSubmit={handleLogin} className="mt-6 space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Password de administrador
-              </span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none ring-brand-sky focus:ring-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="Ingresá la password"
-                required
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-green px-5 py-3 text-sm font-bold text-slate-900 disabled:opacity-60 sm:w-auto"
-            >
-              <Lock className="size-4" />
-              {loading ? "Validando..." : "Ingresar al panel"}
-            </button>
-          </form>
+          <div className="mt-6">
+            <div className="mx-auto max-w-xl rounded-[2rem] border border-slate-200 bg-gradient-to-b from-white to-sky-50/50 p-5 shadow-[0_20px_60px_-40px_rgba(14,165,233,0.6)] dark:border-slate-700 dark:from-slate-900 dark:to-slate-950">
+              <div className="flex flex-col items-center text-center">
+                <Image
+                  src="/Diseño sin título.png"
+                  alt="Vive! Creaciones"
+                  width={240}
+                  height={240}
+                  priority
+                  className="h-32 w-32 rounded-3xl object-contain sm:h-44 sm:w-44"
+                />
+                <h2 className="mt-4 text-2xl font-extrabold text-slate-900 dark:text-white sm:text-3xl">
+                  Admin Vive! Creaciones
+                </h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  Ingresá tu contraseña para gestionar productos, subcards y galería.
+                </p>
+              </div>
+
+              <form onSubmit={handleLogin} className="mt-6 space-y-4">
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Password de administrador
+                  </span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none ring-brand-sky transition focus:ring-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    placeholder="Ingresá la password"
+                    required
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-green px-5 py-3 text-sm font-bold text-slate-900 transition hover:brightness-95 disabled:opacity-60"
+                >
+                  <Lock className="size-4" />
+                  {loading ? "Validando..." : "Ingresar al panel"}
+                </button>
+              </form>
+            </div>
+          </div>
         ) : (
           <div className="mt-6 space-y-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -575,6 +685,52 @@ export default function AdminPage() {
                               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             />
                           </label>
+                          {formValues.files.length > 0 && (
+                            <div className="rounded-xl border border-slate-200 p-2 dark:border-slate-700">
+                              <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                Imágenes del carrusel (orden actual)
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {formValues.files.map((file, index) => (
+                                  <div key={`${file.name}-${index}`} className="relative">
+                                    <img
+                                      src={URL.createObjectURL(file)}
+                                      alt={file.name}
+                                      className="h-16 w-16 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => removeNewSubcardFile(product.slug, index)}
+                                      className="absolute -right-1.5 -top-1.5 rounded-full bg-rose-600 p-1 text-white"
+                                      aria-label="Eliminar imagen"
+                                    >
+                                      <X className="size-3" />
+                                    </button>
+                                    <div className="absolute bottom-1 left-1 right-1 flex justify-between">
+                                      <button
+                                        type="button"
+                                        onClick={() => moveNewSubcardFile(product.slug, index, "left")}
+                                        className="rounded bg-white/90 p-0.5 text-slate-800 disabled:opacity-40"
+                                        disabled={index === 0}
+                                        aria-label="Mover a la izquierda"
+                                      >
+                                        <ArrowLeft className="size-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveNewSubcardFile(product.slug, index, "right")}
+                                        className="rounded bg-white/90 p-0.5 text-slate-800 disabled:opacity-40"
+                                        disabled={index === formValues.files.length - 1}
+                                        aria-label="Mover a la derecha"
+                                      >
+                                        <ArrowRight className="size-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => void handleCreateSubcard(product.slug)}
@@ -606,6 +762,52 @@ export default function AdminPage() {
                                 <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
                                   {card.description}
                                 </p>
+                              )}
+                              {(subcardImages[card.id] ?? []).length > 0 && (
+                                <div className="mt-2 rounded-xl border border-slate-200 p-2 dark:border-slate-700">
+                                  <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                    Imágenes del carrusel
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(subcardImages[card.id] ?? []).map((image, index) => (
+                                      <div key={image.name} className="relative">
+                                        <img
+                                          src={image.url}
+                                          alt={`${card.title} ${index + 1}`}
+                                          className="h-16 w-16 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => void handleDeleteSubcardImage(card, image.name)}
+                                          className="absolute -right-1.5 -top-1.5 rounded-full bg-rose-600 p-1 text-white"
+                                          aria-label="Eliminar imagen"
+                                        >
+                                          <X className="size-3" />
+                                        </button>
+                                        <div className="absolute bottom-1 left-1 right-1 flex justify-between">
+                                          <button
+                                            type="button"
+                                            onClick={() => void reorderSubcardImages(card, index, index - 1)}
+                                            className="rounded bg-white/90 p-0.5 text-slate-800 disabled:opacity-40"
+                                            disabled={index === 0}
+                                            aria-label="Mover a la izquierda"
+                                          >
+                                            <ArrowLeft className="size-3" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void reorderSubcardImages(card, index, index + 1)}
+                                            className="rounded bg-white/90 p-0.5 text-slate-800 disabled:opacity-40"
+                                            disabled={index === (subcardImages[card.id] ?? []).length - 1}
+                                            aria-label="Mover a la derecha"
+                                          >
+                                            <ArrowRight className="size-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <button

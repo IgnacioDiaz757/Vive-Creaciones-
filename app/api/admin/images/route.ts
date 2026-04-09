@@ -43,12 +43,17 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const images =
-    data?.map((file) => ({
+    data
+      ?.filter((file) => {
+        if (section !== "products") return true;
+        return !file.name.includes("__subcard-");
+      })
+      .map((file) => ({
       name: file.name,
       aspect: getAspectFromName(file.name),
       productSlug: getProductSlugFromName(file.name),
       url: supabase.storage.from(bucket).getPublicUrl(file.name).data.publicUrl,
-    })) ?? [];
+      })) ?? [];
 
   return NextResponse.json({ images });
 }

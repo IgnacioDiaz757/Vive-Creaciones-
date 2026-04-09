@@ -26,7 +26,8 @@ async function uploadSubcardImage(
   supabase: any,
   file: File,
   subcardId: string,
-  productSlug: string
+  productSlug: string,
+  order: number
 ) {
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const processedImage = await sharp(fileBuffer)
@@ -35,7 +36,9 @@ async function uploadSubcardImage(
     .toBuffer();
 
   const baseName = sanitizeFileName(file.name.replace(/\.[^.]+$/, "")) || "subcard";
-  const filePath = `${Date.now()}__subcard-${subcardId}__product-${productSlug}__${baseName}.jpg`;
+  const paddedOrder = String(order).padStart(3, "0");
+  const randomToken = Math.random().toString(36).slice(2, 8);
+  const filePath = `${Date.now()}-${randomToken}__order-${paddedOrder}__subcard-${subcardId}__product-${productSlug}__${baseName}.jpg`;
 
   const { error: uploadError } = await supabase.storage
     .from("product-images")
@@ -54,6 +57,13 @@ function getFilesFromFormData(formData: FormData, key: string) {
   return formData.getAll(key).filter((item): item is File => item instanceof File);
 }
 
+function getSubcardOrderFromName(fileName: string) {
+  const match = fileName.match(/__order-(\d{3})__/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
 export async function GET(request: NextRequest) {
   if (!isAdminAuthorized(request)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
@@ -63,10 +73,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Config de Supabase incompleta." }, { status: 500 });
   }
 
-  const { data, error } = await supabase
+  const [{ data, error }, { data: imageFiles }] = await Promise.all([
+    supabase
     .from("product_subcards")
     .select("id, product_slug, title, price, description, image_url")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }),
+    supabase.storage.from("product-images").list("", { limit: 500 }),
+  ]);
   if (error) {
     return NextResponse.json(
       {
@@ -76,7 +89,23 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-  return NextResponse.json({ subcards: data ?? [] });
+  const subcardImages = (imageFiles ?? [])
+    .map((file) => file.name)
+    .filter((name) => name.includes("__subcard-"))
+    .map((name) => {
+      const idMatch = name.match(/__subcard-([^_]+)__/);
+      const subcardId = idMatch?.[1] ?? "";
+      return {
+        subcardId,
+        name,
+        order: getSubcardOrderFromName(name),
+        url: supabase.storage.from("product-images").getPublicUrl(name).data.publicUrl,
+      };
+    })
+    .filter((item) => item.subcardId)
+    .sort((a, b) => a.order - b.order);
+
+  return NextResponse.json({ subcards: data ?? [], subcardImages });
 }
 
 export async function POST(request: NextRequest) {
@@ -109,8 +138,8 @@ export async function POST(request: NextRequest) {
   let imageUrl = "";
   try {
     const uploadedUrls: string[] = [];
-    for (const file of files) {
-      const url = await uploadSubcardImage(supabase, file, subcardId, productSlug);
+    for (const [index, file] of files.entries()) {
+      const url = await uploadSubcardImage(supabase, file, subcardId, productSlug, index);
       uploadedUrls.push(url);
     }
     imageUrl = uploadedUrls[0] ?? "";
@@ -169,9 +198,14 @@ export async function PATCH(request: NextRequest) {
 
   if (files.length > 0) {
     try {
+      const { data: currentSubcardFiles } = await supabase.storage.from("product-images").list("", { limit: 500 });
+      const existingCount =
+        currentSubcardFiles
+          ?.map((file) => file.name)
+          .filter((name) => name.includes(`__subcard-${id}__`)).length ?? 0;
       const uploadedUrls: string[] = [];
-      for (const file of files) {
-        const url = await uploadSubcardImage(supabase, file, id, productSlug);
+      for (const [index, file] of files.entries()) {
+        const url = await uploadSubcardImage(supabase, file, id, productSlug, existingCount + index);
         uploadedUrls.push(url);
       }
       updatePayload.image_url = uploadedUrls[0];
@@ -193,10 +227,89 @@ export async function DELETE(request: NextRequest) {
   if (!supabase) {
     return NextResponse.json({ error: "Config de Supabase incompleta." }, { status: 500 });
   }
-  const { id } = (await request.json()) as { id?: string };
+  const { id, imageName, productSlug } = (await request.json()) as {
+    id?: string;
+    imageName?: string;
+    productSlug?: string;
+  };
   if (!id) return NextResponse.json({ error: "ID inválido." }, { status: 400 });
+
+  if (imageName) {
+    const { error } = await supabase.storage.from("product-images").remove([imageName]);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const { data: fileList } = await supabase.storage.from("product-images").list("", { limit: 500 });
+    const remaining = (fileList ?? [])
+      .map((file) => file.name)
+      .filter((name) => name.includes(`__subcard-${id}__`))
+      .sort((a, b) => getSubcardOrderFromName(a) - getSubcardOrderFromName(b));
+
+    const nextCover =
+      remaining[0] &&
+      supabase.storage.from("product-images").getPublicUrl(remaining[0]).data.publicUrl;
+    const { error: coverError } = await supabase
+      .from("product_subcards")
+      .update({ image_url: nextCover ?? null })
+      .eq("id", id);
+    if (coverError) return NextResponse.json({ error: coverError.message }, { status: 500 });
+
+    return NextResponse.json({ ok: true });
+  }
 
   const { error } = await supabase.from("product_subcards").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const { data: existingFiles } = await supabase.storage.from("product-images").list("", { limit: 500 });
+  const filesToRemove =
+    existingFiles
+      ?.map((file) => file.name)
+      .filter((name) =>
+        productSlug ? name.includes(`__subcard-${id}__`) && name.includes(`__product-${productSlug}__`) : name.includes(`__subcard-${id}__`)
+      ) ?? [];
+  if (filesToRemove.length > 0) {
+    await supabase.storage.from("product-images").remove(filesToRemove);
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function PUT(request: NextRequest) {
+  if (!isAdminAuthorized(request)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json({ error: "Config de Supabase incompleta." }, { status: 500 });
+  }
+
+  const { id, productSlug, orderedNames } = (await request.json()) as {
+    id?: string;
+    productSlug?: string;
+    orderedNames?: string[];
+  };
+  if (!id || !productSlug || !Array.isArray(orderedNames)) {
+    return NextResponse.json({ error: "Datos inválidos para reordenar." }, { status: 400 });
+  }
+
+  for (const [index, oldName] of orderedNames.entries()) {
+    const match = oldName.match(/__([^_]+)\.jpg$/);
+    const baseName = match?.[1] ?? "subcard";
+    const nextName = `${Date.now()}-${index}__order-${String(index).padStart(3, "0")}__subcard-${id}__product-${productSlug}__${baseName}.jpg`;
+    const { error: copyError } = await supabase.storage.from("product-images").copy(oldName, nextName);
+    if (copyError) return NextResponse.json({ error: copyError.message }, { status: 500 });
+    const { error: removeError } = await supabase.storage.from("product-images").remove([oldName]);
+    if (removeError) return NextResponse.json({ error: removeError.message }, { status: 500 });
+    orderedNames[index] = nextName;
+  }
+
+  const firstImage = orderedNames[0]
+    ? supabase.storage.from("product-images").getPublicUrl(orderedNames[0]).data.publicUrl
+    : null;
+  const { error: updateError } = await supabase
+    .from("product_subcards")
+    .update({ image_url: firstImage })
+    .eq("id", id);
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+
   return NextResponse.json({ ok: true });
 }
