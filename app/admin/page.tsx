@@ -348,7 +348,7 @@ export default function AdminPage() {
   };
 
   return (
-    <main className="section-container py-12 text-slate-900 dark:text-slate-100">
+    <main className="section-container py-12 text-slate-900 dark:text-slate-100 [&_button]:cursor-pointer [&_a]:cursor-pointer">
       <div className="bubble-card mx-auto max-w-4xl p-4 sm:p-6 md:p-8">
         <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white sm:text-3xl">Admin</h1>
 
